@@ -1,0 +1,9 @@
+
+-- Disable RLS on all application tables
+ALTER TABLE public.chat_conversations DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_data DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.document_chunks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles DISABLE ROW LEVEL SECURITY;
