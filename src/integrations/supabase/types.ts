@@ -153,6 +153,7 @@ export type Database = {
       documents: {
         Row: {
           category: Database["public"]["Enums"]["doc_category"]
+          content_hash: string | null
           created_at: string
           file_name: string
           file_path: string
@@ -166,6 +167,7 @@ export type Database = {
         }
         Insert: {
           category?: Database["public"]["Enums"]["doc_category"]
+          content_hash?: string | null
           created_at?: string
           file_name: string
           file_path: string
@@ -179,6 +181,7 @@ export type Database = {
         }
         Update: {
           category?: Database["public"]["Enums"]["doc_category"]
+          content_hash?: string | null
           created_at?: string
           file_name?: string
           file_path?: string
