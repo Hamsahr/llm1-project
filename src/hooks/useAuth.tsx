@@ -10,7 +10,7 @@ interface AuthContextType {
   role: AppRole | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, displayName: string, role: AppRole) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, displayName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -59,21 +59,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) {
+      // Update last_sign_in_at in profiles
+      const { data: { user: signedInUser } } = await supabase.auth.getUser();
+      if (signedInUser) {
+        await supabase.from("profiles").update({ last_sign_in_at: new Date().toISOString() }).eq("user_id", signedInUser.id);
+      }
+    }
     return { error: error as Error | null };
   };
 
-  const signUp = async (email: string, password: string, displayName: string, roleChoice: AppRole) => {
-    const { data, error } = await supabase.auth.signUp({
+  const signUp = async (email: string, password: string, displayName: string) => {
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { display_name: displayName } },
     });
     if (error) return { error: error as Error };
-
-    // Assign role
-    if (data.user) {
-      await supabase.from("user_roles").insert({ user_id: data.user.id, role: roleChoice });
-    }
     return { error: null };
   };
 
