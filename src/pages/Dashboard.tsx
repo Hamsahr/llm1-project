@@ -2,12 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, MessageSquare, TrendingUp } from "lucide-react";
+import { FileText, MessageSquare, TrendingUp, Users } from "lucide-react";
 import DocumentsTable from "@/components/DocumentsTable";
 
 export default function Dashboard() {
   const { role } = useAuth();
-  const [stats, setStats] = useState({ docs: 0, conversations: 0, crm: 0 });
+  const [stats, setStats] = useState({ docs: 0, conversations: 0, crm: 0, users: 0 });
 
   const updateDocCount = useCallback((count: number) => {
     setStats((prev) => ({ ...prev, docs: count }));
@@ -15,16 +15,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     const load = async () => {
-      const [convos, crm] = await Promise.all([
-        supabase.from("chat_conversations").select("id", { count: "exact", head: true }),
-        role === "admin" || role === "hr"
-          ? supabase.from("crm_data").select("id", { count: "exact", head: true })
-          : Promise.resolve({ count: null }),
-      ]);
+      const convos = await supabase.from("chat_conversations").select("id", { count: "exact", head: true });
+      const crm = role === "admin" || role === "hr"
+        ? await supabase.from("crm_data").select("id", { count: "exact", head: true })
+        : { count: null };
+      const usersRes = role === "admin"
+        ? await supabase.from("profiles").select("id", { count: "exact", head: true })
+        : { count: null };
       setStats((prev) => ({
         ...prev,
         conversations: convos.count ?? 0,
         crm: (crm as any).count ?? 0,
+        users: (usersRes as any).count ?? 0,
       }));
     };
     load();
@@ -37,6 +39,9 @@ export default function Dashboard() {
 
   if (role === "admin" || role === "hr") {
     cards.push({ title: "CRM Records", value: stats.crm, icon: TrendingUp, color: "text-primary" });
+  }
+  if (role === "admin") {
+    cards.push({ title: "Users", value: stats.users, icon: Users, color: "text-primary" });
   }
 
   return (
