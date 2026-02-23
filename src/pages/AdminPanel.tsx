@@ -87,22 +87,31 @@ export default function AdminPanel() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Joined</TableHead>
+                    <TableHead>Last Login</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users.map(u => (
                     <TableRow key={u.id}>
-                      <TableCell className="font-medium">{u.display_name}</TableCell>
+                      <TableCell className="font-medium">{u.display_name ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{u.email ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
-                          {(u.user_roles as any)?.[0]?.role ?? "none"}
+                          {(u.user_roles as any)?.[0]?.role ?? "developer"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{new Date(u.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : "Never"}
+                      </TableCell>
                     </TableRow>
                   ))}
+                  {users.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">No users yet</TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

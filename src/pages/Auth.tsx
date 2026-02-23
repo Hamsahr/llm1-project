@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Brain } from "lucide-react";
 
@@ -15,7 +14,6 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<"admin" | "hr" | "developer">("developer");
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp } = useAuth();
 
@@ -29,7 +27,7 @@ export default function Auth() {
       const { error } = await signIn(email, password);
       if (error) toast.error(error.message);
     } else {
-      const { error } = await signUp(email, password, displayName, role);
+      const { error } = await signUp(email, password, displayName);
       if (error) toast.error(error.message);
       else toast.success("Account created! Check your email to verify, then sign in.");
     }
@@ -62,19 +60,6 @@ export default function Auth() {
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
             </div>
-            {!isLogin && (
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={role} onValueChange={(v: any) => setRole(v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="hr">HR</SelectItem>
-                    <SelectItem value="developer">Developer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
             </Button>
