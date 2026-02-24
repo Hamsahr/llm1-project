@@ -23,23 +23,36 @@ serve(async (req) => {
     // Try to find relevant document chunks using text search
     // First, try to get embeddings for the query (same approach as document processing)
     let relevantChunks: any[] = [];
-    
-    // Fallback: use text-based search
+
+    // Log total indexed documents and chunks
+    const { count: totalChunks } = await supabase
+      .from("document_chunks")
+      .select("*", { count: "exact", head: true });
+    const { count: totalDocs } = await supabase
+      .from("documents")
+      .select("*", { count: "exact", head: true });
+    console.log(`[RAG] Total indexed documents: ${totalDocs}, Total chunks: ${totalChunks}`);
+
+    // Text-based search across ALL documents (no category filter)
+    const searchTerms = lastMessage.split(/\s+/).filter(w => w.length > 2).slice(0, 8).join(" & ");
     const { data: chunks } = await supabase
       .from("document_chunks")
       .select("content, document_id, documents(title, category)")
-      .textSearch("content", lastMessage.split(" ").slice(0, 5).join(" & "), { type: "plain" });
+      .textSearch("content", searchTerms, { type: "plain" })
+      .limit(15);
 
     if (chunks && chunks.length > 0) {
-      relevantChunks = chunks.slice(0, 5);
+      relevantChunks = chunks.slice(0, 10);
     } else {
-      // If text search returns nothing, get some recent chunks as context
+      // Fallback: get recent chunks from ALL documents
       const { data: recentChunks } = await supabase
         .from("document_chunks")
         .select("content, document_id, documents(title, category)")
-        .limit(3);
+        .limit(10);
       relevantChunks = recentChunks || [];
     }
+
+    console.log(`[RAG] Retrieved ${relevantChunks.length} chunks for query: "${lastMessage.substring(0, 80)}"`);
 
     // Build context from relevant chunks
     const context = relevantChunks
