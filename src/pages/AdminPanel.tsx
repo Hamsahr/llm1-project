@@ -20,12 +20,19 @@ export default function AdminPanel() {
   }, [role]);
 
   const loadData = async () => {
-    const [docsRes, usersRes] = await Promise.all([
+    const [docsRes, profilesRes, rolesRes] = await Promise.all([
       supabase.from("documents").select("*").order("created_at", { ascending: false }),
-      supabase.from("profiles").select("*, user_roles(role)"),
+      supabase.from("profiles").select("*"),
+      supabase.from("user_roles").select("user_id, role"),
     ]);
     setDocuments(docsRes.data ?? []);
-    setUsers(usersRes.data ?? []);
+    const profiles = profilesRes.data ?? [];
+    const roles = rolesRes.data ?? [];
+    const merged = profiles.map((p) => ({
+      ...p,
+      role: roles.find((r) => r.user_id === p.user_id)?.role ?? "developer",
+    }));
+    setUsers(merged);
   };
 
   if (role !== "admin") return <Navigate to="/" replace />;
@@ -100,7 +107,7 @@ export default function AdminPanel() {
                       <TableCell className="text-muted-foreground">{u.email ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
-                          {(u.user_roles as any)?.[0]?.role ?? "developer"}
+                          {u.role}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{new Date(u.created_at).toLocaleDateString()}</TableCell>
