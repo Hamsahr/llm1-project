@@ -30,6 +30,10 @@ export default function ChatAssistant() {
 
   const sendMessage = async () => {
     if (!input.trim() || loading || !user) return;
+    if (input.length > 10000) {
+      toast.error("Message is too long (max 10,000 characters)");
+      return;
+    }
     const userMsg: Msg = { role: "user", content: input.trim() };
     setMessages(prev => [...prev, userMsg]);
     setInput("");
