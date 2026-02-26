@@ -3,18 +3,75 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { documentId, filePath, mimeType } = await req.json();
+    // --- Authentication ---
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Verify the user's JWT
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userId = claimsData.claims.sub;
+
+    const { documentId, filePath, mimeType } = await req.json();
+
+    // Use service client for privileged operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Verify the user owns the document or is admin
+    const { data: doc, error: docError } = await supabase
+      .from("documents")
+      .select("uploaded_by")
+      .eq("id", documentId)
+      .single();
+
+    if (docError || !doc) {
+      return new Response(JSON.stringify({ error: "Document not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const isAdmin = roleData?.role === "admin";
+
+    if (doc.uploaded_by !== userId && !isAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -27,11 +84,9 @@ serve(async (req) => {
     if (mimeType === "text/plain" || mimeType === "text/csv") {
       text = await fileData.text();
     } else if (mimeType === "application/pdf") {
-      // For PDF, extract raw text (basic extraction)
       const bytes = new Uint8Array(await fileData.arrayBuffer());
       text = extractTextFromPdfBytes(bytes);
     } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-      // For DOCX, extract text from XML content
       text = await extractTextFromDocx(fileData);
     }
 
@@ -50,7 +105,6 @@ serve(async (req) => {
 
       if (LOVABLE_API_KEY) {
         try {
-          // Use Lovable AI to generate a text representation, then create a simple embedding
           const embResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -103,7 +157,7 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("process-document error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({ error: "Document processing failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -122,22 +176,18 @@ function chunkText(text: string, chunkSize: number, overlap: number): string[] {
 }
 
 function extractTextFromPdfBytes(bytes: Uint8Array): string {
-  // Basic PDF text extraction - looks for text between BT/ET markers
   const text: string[] = [];
   const str = new TextDecoder("latin1").decode(bytes);
   
-  // Extract text from stream content
   const streamRegex = /stream\r?\n([\s\S]*?)endstream/g;
   let match;
   while ((match = streamRegex.exec(str)) !== null) {
     const content = match[1];
-    // Look for text operations
     const textRegex = /\((.*?)\)\s*Tj/g;
     let textMatch;
     while ((textMatch = textRegex.exec(content)) !== null) {
       text.push(textMatch[1]);
     }
-    // Also look for TJ arrays
     const tjRegex = /\[(.*?)\]\s*TJ/g;
     while ((textMatch = tjRegex.exec(content)) !== null) {
       const inner = textMatch[1];
@@ -152,10 +202,7 @@ function extractTextFromPdfBytes(bytes: Uint8Array): string {
 }
 
 async function extractTextFromDocx(blob: Blob): Promise<string> {
-  // DOCX files are ZIP archives containing XML
-  // Basic extraction: look for text content in the raw bytes
   const text = await blob.text();
-  // Extract content between XML tags
   const matches = text.match(/<w:t[^>]*>(.*?)<\/w:t>/g);
   if (matches) {
     return matches.map(m => m.replace(/<[^>]+>/g, "")).join(" ");
