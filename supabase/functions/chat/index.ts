@@ -3,51 +3,101 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // --- Authentication ---
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Verify the user's JWT
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userId = claimsData.claims.sub;
+
+    // Get user role using service client
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { data: roleData } = await serviceClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const role = roleData?.role;
+
+    // Determine allowed categories based on role
+    let categoryFilter: string[];
+    if (role === "admin") {
+      categoryFilter = ["hr", "technical", "general"];
+    } else if (role === "hr") {
+      categoryFilter = ["hr", "general"];
+    } else if (role === "developer") {
+      categoryFilter = ["technical", "general"];
+    } else {
+      categoryFilter = ["general"];
+    }
+
+    // --- RAG Pipeline ---
     const { messages, conversationId } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
     const lastMessage = messages[messages.length - 1]?.content || "";
 
-    // Try to find relevant document chunks using text search
-    // First, try to get embeddings for the query (same approach as document processing)
-    let relevantChunks: any[] = [];
-
     // Log total indexed documents and chunks
-    const { count: totalChunks } = await supabase
+    const { count: totalChunks } = await serviceClient
       .from("document_chunks")
       .select("*", { count: "exact", head: true });
-    const { count: totalDocs } = await supabase
+    const { count: totalDocs } = await serviceClient
       .from("documents")
       .select("*", { count: "exact", head: true });
     console.log(`[RAG] Total indexed documents: ${totalDocs}, Total chunks: ${totalChunks}`);
+    console.log(`[RAG] User: ${userId}, Role: ${role}, Allowed categories: ${categoryFilter.join(", ")}`);
 
-    // Text-based search across ALL documents (no category filter)
-    const searchTerms = lastMessage.split(/\s+/).filter(w => w.length > 2).slice(0, 8).join(" & ");
-    const { data: chunks } = await supabase
+    // Text-based search filtered by user's allowed categories
+    let relevantChunks: any[] = [];
+    const searchTerms = lastMessage.split(/\s+/).filter((w: string) => w.length > 2).slice(0, 8).join(" & ");
+
+    const { data: chunks } = await serviceClient
       .from("document_chunks")
-      .select("content, document_id, documents(title, category)")
+      .select("content, document_id, documents!inner(title, category)")
+      .in("documents.category", categoryFilter)
       .textSearch("content", searchTerms, { type: "plain" })
       .limit(15);
 
     if (chunks && chunks.length > 0) {
       relevantChunks = chunks.slice(0, 10);
     } else {
-      // Fallback: get recent chunks from ALL documents
-      const { data: recentChunks } = await supabase
+      // Fallback: get recent chunks from allowed categories only
+      const { data: recentChunks } = await serviceClient
         .from("document_chunks")
-        .select("content, document_id, documents(title, category)")
+        .select("content, document_id, documents!inner(title, category)")
+        .in("documents.category", categoryFilter)
         .limit(10);
       relevantChunks = recentChunks || [];
     }
@@ -140,7 +190,7 @@ ${context}`
     });
   } catch (e) {
     console.error("chat error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({ error: "An error occurred" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
