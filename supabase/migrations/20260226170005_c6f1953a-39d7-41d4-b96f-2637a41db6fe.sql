@@ -1,0 +1,1 @@
+DROP POLICY "HR and Admin can view CRM" ON public.crm_data;
