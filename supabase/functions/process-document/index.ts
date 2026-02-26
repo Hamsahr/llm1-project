@@ -157,7 +157,16 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("process-document error:", e);
-    return new Response(JSON.stringify({ error: "Document processing failed" }), {
+    // Return generic error - never expose internal details
+    let userMessage = "Document processing failed";
+    if (e instanceof Error) {
+      if (e.message?.includes("storage") || e.message?.includes("download")) {
+        userMessage = "Unable to access document file";
+      } else if (e.message?.includes("timeout")) {
+        userMessage = "Processing took too long, please try again";
+      }
+    }
+    return new Response(JSON.stringify({ error: userMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
