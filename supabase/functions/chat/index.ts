@@ -107,7 +107,13 @@ serve(async (req) => {
 
     // Text-based search filtered by user's allowed categories
     let relevantChunks: any[] = [];
-    const searchTerms = lastMessage.split(/\s+/).filter((w: string) => w.length > 2).slice(0, 8).join(" & ");
+    const sanitize = (t: string) => t.replace(/[&|!<>():*\\'"]/g, "").trim();
+    const searchTerms = lastMessage
+      .split(/\s+/)
+      .map(sanitize)
+      .filter((w: string) => w.length > 2)
+      .slice(0, 8)
+      .join(" & ");
 
     const { data: chunks } = await serviceClient
       .from("document_chunks")
