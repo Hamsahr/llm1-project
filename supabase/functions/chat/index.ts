@@ -23,7 +23,7 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify the user's JWT
+    // Verify the user's JWT - reject anon/service tokens
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -37,7 +37,15 @@ serve(async (req) => {
       });
     }
 
+    // Ensure this is a real user token, not an anon/service key
     const userId = claimsData.claims.sub;
+    const tokenRole = (claimsData.claims as Record<string, unknown>).role;
+    if (!userId || tokenRole === "anon" || tokenRole === "service_role") {
+      return new Response(JSON.stringify({ error: "Unauthorized: user token required" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Get user role using service client
     const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
